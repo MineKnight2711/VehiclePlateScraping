@@ -7,7 +7,7 @@ rỗng hoặc không có dữ liệu.
 Provider order:
 
 1. Fresh local cache.
-2. `api.phatnguoi.vn` public endpoint.
+2. `phatnguoi.app` AJAX endpoint.
 3. Optional HCMC CSGT endpoint when `HCMC_CAPTCHA_SOLVER_URL` is configured.
 4. CSGT national page flow.
 5. Stale cache if every live provider is blocked.
@@ -50,7 +50,7 @@ Repo đã có `render.yaml` ở root.
 
 1. Push code lên GitHub.
 2. Vào Render, chọn Blueprint deploy từ repo.
-3. Render sẽ tạo service từ `render.yaml` (rootDir=`backend`).
+3. Render sẽ tạo service từ `render.yaml` (rootDir=`.`).
 4. Sau khi deploy xong, kiểm tra: `https://<service>.onrender.com/health`.
 
 ### Railway

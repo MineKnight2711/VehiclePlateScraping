@@ -1,14 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import base64
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import requests
 
@@ -105,54 +105,100 @@ class CsgtNationalProvider(TrafficFineProvider):
 
 
 class PhatNguoiProvider(TrafficFineProvider):
-    name = "api.phatnguoi.vn"
+    name = "phatnguoi.app"
 
     def __init__(self) -> None:
         self.timeout = int(os.getenv("PHATNGUOI_TIMEOUT_SECONDS", "30"))
-        self.base_url = os.getenv(
-            "PHATNGUOI_API_URL",
-            "https://api.phatnguoi.vn/web/tra-cuu/{plate}/{vehicle_code}",
+        self.home_url = os.getenv("PHATNGUOI_HOME_URL", "https://phatnguoi.app/")
+        self.ajax_url = os.getenv(
+            "PHATNGUOI_AJAX_URL",
+            "https://phatnguoi.app/wp-admin/admin-ajax.php",
         )
+        self.nonce_override = os.getenv("PHATNGUOI_NONCE", "").strip()
 
     async def check(self, license_plate: str, vehicle_code: str) -> LookupResult:
         return await asyncio.to_thread(self._check_sync, license_plate, vehicle_code)
 
     def _check_sync(self, license_plate: str, vehicle_code: str) -> LookupResult:
-        url = self.base_url.format(
-            plate=quote(license_plate),
-            vehicle_code=quote(vehicle_code),
-        )
-        response = requests.get(
-            url,
-            timeout=self.timeout,
-            headers={
+        session = requests.Session()
+        session.headers.update(
+            {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/123.0.0.0 Safari/537.36"
                 ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Referer": self.home_url,
+                "X-Requested-With": "XMLHttpRequest",
+            }
         )
+
+        nonce = self.nonce_override or self._fetch_nonce(session)
+        response = self._lookup(session, nonce, license_plate, vehicle_code)
+
+        # WordPress returns "-1" when nonce is invalid/expired.
+        if response.text.strip() == "-1" and not self.nonce_override:
+            nonce = self._fetch_nonce(session)
+            response = self._lookup(session, nonce, license_plate, vehicle_code)
+
         response.raise_for_status()
-        html = response.text
-        canonical = _canonical_text(html)
-        if "[tk]" in html or "co loi say ra" in canonical or "co loi xay ra" in canonical:
-            raise ProviderError("upstream returned an internal lookup error")
+        raw = response.text.strip()
+        if raw == "-1":
+            raise ProviderError("phatnguoi nonce expired or invalid")
 
-        data = parse_violations_html(
-            html,
-            fallback_plate=license_plate,
-            fallback_vehicle_type=_display_vehicle_type(vehicle_code),
-        )
-        for item in data:
-            item["source"] = self.name
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderError("phatnguoi response is not JSON") from exc
 
+        if not isinstance(payload, dict):
+            raise ProviderError("phatnguoi response has invalid format")
+
+        if not payload.get("success"):
+            message = "phatnguoi lookup failed"
+            data_obj = payload.get("data")
+            if isinstance(data_obj, dict):
+                message = str(data_obj.get("message") or message)
+            raise ProviderError(message)
+
+        result = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        violations = result.get("violations") if isinstance(result.get("violations"), list) else []
+        data = [_map_phatnguoi_violation(item) for item in violations if isinstance(item, dict)]
         return LookupResult(
             data=data,
             source=self.name,
             message="Tra cuu thanh cong" if data else "Khong tim thay vi pham",
         )
+
+    def _lookup(
+        self,
+        session: requests.Session,
+        nonce: str,
+        license_plate: str,
+        vehicle_code: str,
+    ) -> requests.Response:
+        payload = {
+            "action": "phatnguoi_search",
+            "nonce": nonce,
+            "license_plate": license_plate,
+            "vehicle_type": _phatnguoi_vehicle_type(vehicle_code),
+        }
+        return session.post(
+            self.ajax_url,
+            data=payload,
+            timeout=self.timeout,
+            headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
+        )
+
+    def _fetch_nonce(self, session: requests.Session) -> str:
+        response = session.get(self.home_url, timeout=self.timeout)
+        response.raise_for_status()
+        html = response.text
+        match = re.search(r"nonce:\s*'([a-zA-Z0-9]+)'", html)
+        if not match:
+            raise ProviderError("cannot get phatnguoi nonce")
+        return match.group(1)
 
 
 class HcmcCsgtProvider(TrafficFineProvider):
@@ -308,21 +354,57 @@ def _hcmc_row_to_violation(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _map_phatnguoi_violation(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "license_plate": str(row.get("plate") or ""),
+        "license_plate_color": str(row.get("plate_color") or ""),
+        "vehicle_type": str(row.get("vehicle_type") or ""),
+        "time": str(row.get("time") or ""),
+        "location": str(row.get("location") or ""),
+        "offense": str(row.get("title") or ""),
+        "status": str(row.get("status_text") or row.get("status") or ""),
+        "complainant": str(row.get("unit") or ""),
+        "place_of_resolutions": _normalize_resolution_places(row.get("resolution_location")),
+        "source": "phatnguoi.app",
+    }
+
+
+def _normalize_resolution_places(raw: Any) -> list[dict[str, str]]:
+    lines: list[str] = []
+    if isinstance(raw, list):
+        lines = [str(item).strip() for item in raw if str(item).strip()]
+    elif isinstance(raw, str):
+        lines = [part.strip() for part in raw.split("\n") if part.strip()]
+
+    return [
+        {"name": line, "address": "", "contact_phone_number": ""}
+        for line in lines
+    ]
+
+
 def _normalize_plate(value: str) -> str:
     return "".join(ch for ch in (value or "").upper() if ch.isalnum())
 
 
 def _vehicle_code(value: str) -> str:
     normalized = (value or "").strip().lower()
-    if normalized in {"2", "motorbike", "moto", "xe may", "xe máy"}:
+    if normalized in {"2", "motorbike", "moto", "xe may"}:
         return "2"
-    if normalized in {"3", "electricbike", "electric_bike", "xe dap dien", "xe đạp điện"}:
+    if normalized in {"3", "electricbike", "electric_bike", "xe dap dien"}:
         return "3"
     return "1"
 
 
 def _csgt_vehicle_type(vehicle_code: str) -> str:
     return {"1": "car", "2": "motorbike", "3": "electricbike"}.get(vehicle_code, "car")
+
+
+def _phatnguoi_vehicle_type(vehicle_code: str) -> str:
+    if vehicle_code == "2":
+        return "moto"
+    if vehicle_code == "3":
+        return "moto"
+    return "car"
 
 
 def _display_vehicle_type(vehicle_code: str) -> str:
@@ -336,75 +418,3 @@ def _env_bool(name: str, *, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _canonical_text(value: str) -> str:
-    replacements = {
-        "ả": "a",
-        "á": "a",
-        "à": "a",
-        "ã": "a",
-        "ạ": "a",
-        "ă": "a",
-        "ắ": "a",
-        "ằ": "a",
-        "ẵ": "a",
-        "ẳ": "a",
-        "ặ": "a",
-        "â": "a",
-        "ấ": "a",
-        "ầ": "a",
-        "ẫ": "a",
-        "ẩ": "a",
-        "ậ": "a",
-        "đ": "d",
-        "é": "e",
-        "è": "e",
-        "ẽ": "e",
-        "ẻ": "e",
-        "ẹ": "e",
-        "ê": "e",
-        "ế": "e",
-        "ề": "e",
-        "ễ": "e",
-        "ể": "e",
-        "ệ": "e",
-        "í": "i",
-        "ì": "i",
-        "ĩ": "i",
-        "ỉ": "i",
-        "ị": "i",
-        "ó": "o",
-        "ò": "o",
-        "õ": "o",
-        "ỏ": "o",
-        "ọ": "o",
-        "ô": "o",
-        "ố": "o",
-        "ồ": "o",
-        "ỗ": "o",
-        "ổ": "o",
-        "ộ": "o",
-        "ơ": "o",
-        "ớ": "o",
-        "ờ": "o",
-        "ỡ": "o",
-        "ở": "o",
-        "ợ": "o",
-        "ú": "u",
-        "ù": "u",
-        "ũ": "u",
-        "ủ": "u",
-        "ụ": "u",
-        "ư": "u",
-        "ứ": "u",
-        "ừ": "u",
-        "ữ": "u",
-        "ử": "u",
-        "ự": "u",
-        "ý": "y",
-        "ỳ": "y",
-        "ỹ": "y",
-        "ỷ": "y",
-        "ỵ": "y",
-    }
-    lowered = (value or "").lower()
-    return "".join(replacements.get(ch, ch) for ch in lowered)
