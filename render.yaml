@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: autobis-traffic-scraper
+    env: python
+    rootDir: backend
+    plan: free
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_server.py
+    healthCheckPath: /health
+    envVars:
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: SCRAPER_ENABLE_PHATNGUOI
+        value: true
+      - key: SCRAPER_ENABLE_CSGT
+        value: false
+      - key: SCRAPER_ENABLE_HCMC
+        value: false
