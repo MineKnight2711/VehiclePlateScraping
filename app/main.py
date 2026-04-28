@@ -47,6 +47,7 @@ async def check_traffic_fines(
         result = await lookup_service.check(
             license_plate=request.license_plate,
             vehicle_type=request.vehicle_type,
+            force_refresh=request.force_refresh,
         )
         return TrafficFineCheckResponse(
             error=0,

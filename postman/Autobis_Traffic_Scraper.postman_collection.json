@@ -1,0 +1,195 @@
+{
+  "info": {
+    "_postman_id": "9fcb2e9f-9c9b-4ba7-b6c4-8db5d17fe6c5",
+    "name": "Autobis Traffic Scraper API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for Autobis Python backend traffic fine lookup."
+  },
+  "item": [
+    {
+      "name": "Health - /health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const jsonData = pm.response.json();",
+              "pm.test('Health response has status=ok', function () {",
+              "  pm.expect(jsonData).to.have.property('status');",
+              "  pm.expect(jsonData.status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health - /",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            ""
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const jsonData = pm.response.json();",
+              "pm.test('Root health has status=ok', function () {",
+              "  pm.expect(jsonData.status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Traffic Fines Check - Success",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"license_plate\": \"{{licensePlate}}\",\n  \"vehicle_type\": \"{{vehicleType}}\",\n  \"force_refresh\": {{forceRefresh}}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/traffic-fines/check",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "traffic-fines",
+            "check"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const jsonData = pm.response.json();",
+              "pm.test('Response has expected keys', function () {",
+              "  pm.expect(jsonData).to.have.property('error');",
+              "  pm.expect(jsonData).to.have.property('message');",
+              "  pm.expect(jsonData).to.have.property('data');",
+              "});",
+              "",
+              "pm.test('error is numeric and data is array', function () {",
+              "  pm.expect(jsonData.error).to.be.a('number');",
+              "  pm.expect(jsonData.data).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Traffic Fines Check - Validation Error (422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vehicle_type\": \"{{vehicleType}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/traffic-fines/check",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "traffic-fines",
+            "check"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 422', function () {",
+              "  pm.response.to.have.status(422);",
+              "});",
+              "",
+              "const jsonData = pm.response.json();",
+              "pm.test('Validation payload contains detail', function () {",
+              "  pm.expect(jsonData).to.have.property('detail');",
+              "  pm.expect(jsonData.detail).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://xxx.onrender.com"
+    },
+    {
+      "key": "licensePlate",
+      "value": "51H34390"
+    },
+    {
+      "key": "vehicleType",
+      "value": "car"
+    },
+    {
+      "key": "forceRefresh",
+      "value": "true"
+    }
+  ]
+}

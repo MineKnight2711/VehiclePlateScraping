@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class TrafficFineCheckRequest(BaseModel):
     license_plate: str = Field(..., min_length=3)
     vehicle_type: str = "car"
+    force_refresh: bool = False
 
 
 class TrafficFineCheckResponse(BaseModel):

@@ -44,13 +44,21 @@ class TrafficFineLookupService:
         if _env_bool("SCRAPER_ENABLE_CSGT", default=True):
             self.providers.append(CsgtNationalProvider())
 
-    async def check(self, license_plate: str, vehicle_type: str) -> LookupResult:
+    async def check(
+        self,
+        license_plate: str,
+        vehicle_type: str,
+        *,
+        force_refresh: bool = False,
+    ) -> LookupResult:
         plate = _normalize_plate(license_plate)
         vehicle_code = _vehicle_code(vehicle_type)
         cache_key = f"{plate}:{vehicle_code}"
 
-        cached = self.cache.get(cache_key)
-        if cached and not cached.stale:
+        cached = None if force_refresh else self.cache.get(cache_key)
+        # Only short-circuit when cache contains violation data.
+        # Empty cache entries are treated as hints and we still re-check live providers.
+        if cached and not cached.stale and cached.data:
             return cached
 
         errors: list[str] = []

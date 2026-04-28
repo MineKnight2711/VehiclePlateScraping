@@ -110,9 +110,12 @@ flutter build apk --release \
 ```json
 {
   "license_plate": "30A12345",
-  "vehicle_type": "car"
+  "vehicle_type": "car",
+  "force_refresh": false
 }
 ```
+
+`force_refresh` là tuỳ chọn. Khi đặt `true`, backend sẽ bỏ qua cache và gọi live provider.
 
 Response shape:
 
