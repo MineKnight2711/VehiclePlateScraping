@@ -9,6 +9,8 @@ services:
     startCommand: python run_server.py
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
       - key: APP_HOST
         value: 0.0.0.0
       - key: ALLOWED_ORIGINS
