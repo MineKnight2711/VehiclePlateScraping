@@ -3,13 +3,15 @@ from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import get_auth_config, verify_api_authorization
 from .models import HealthResponse, TrafficFineCheckRequest, TrafficFineCheckResponse
 from .traffic_lookup_service import ProviderError, TrafficFineLookupService
 
 load_dotenv()
+get_auth_config()
 
 app = FastAPI(title="Autobis Traffic Fine Scraper API", version="1.0.0")
 
@@ -42,6 +44,7 @@ async def health() -> HealthResponse:
 @app.post("/api/traffic-fines/check", response_model=TrafficFineCheckResponse)
 async def check_traffic_fines(
     request: TrafficFineCheckRequest,
+    _: None = Depends(verify_api_authorization),
 ) -> TrafficFineCheckResponse:
     try:
         result = await lookup_service.check(

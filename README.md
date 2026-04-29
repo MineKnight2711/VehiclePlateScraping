@@ -21,6 +21,7 @@ python -m venv .venv
 pip install -r requirements.txt
 playwright install chromium
 copy .env.example .env
+# Set API_AUTH_TOKEN in .env before starting the server.
 python run_server.py
 ```
 
@@ -106,6 +107,14 @@ flutter build apk --release \
 ## Endpoint
 
 `POST /api/traffic-fines/check`
+
+Authorization is required by default (`API_AUTH_ENABLED=true`):
+
+- `Authorization: Bearer <API_AUTH_TOKEN>`
+- or `X-API-Key: <API_AUTH_TOKEN>`
+
+You can rotate keys without downtime by setting multiple tokens in `API_AUTH_TOKENS`
+(comma-separated); all listed tokens will be accepted.
 
 ```json
 {
